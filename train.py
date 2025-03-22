@@ -3,7 +3,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
@@ -65,7 +65,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         iter_start.record()
 
         gaussians.update_learning_rate(iteration)
-        
+
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
@@ -87,7 +87,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
-        
+
         background = torch.rand((3), dtype=torch.float32, device="cuda") if dataset.random_background else background
         patch_size = [float('inf'), float('inf')]
 
@@ -114,13 +114,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss_rgb = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
 
         loss_mask = (opac * (1 - pool(mask_gt))).mean()
-        
+
         if mono is not None:
             loss_monoN = cos_loss(normal, monoN, weight=mask_gt)
             # loss_depth = l1_loss(depth * mask_match, monoD_match)
 
         loss_surface = cos_loss(normal, d2n)
-        
+
 
         opac_ = gaussians.get_opacity
         opac_mask0 = torch.gt(opac_, 0.01) * torch.le(opac_, 0.5)
@@ -129,11 +129,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss_opac = (torch.exp(-(opac_ - 0.5)**2 * 20) * opac_mask).mean()
         # loss_opac = bce_loss(opac_, torch.gt(opac_, 0.01) * torch.le(opac_, 0.99)) * 0.01
 
-        
+
         curv_n = normal2curv(normal, mask_vis)
         # curv_d2n = normal2curv(d2n, mask_vis_2)
         loss_curv = l1_loss(curv_n * 1, 0) #+ 1 * l1_loss(curv_d2n, 0)
-        
+
         loss = 1 * loss_rgb
         loss += 0.1 * loss_mask
         loss += (0.01 + 0.1 * min(2 * iteration / opt.iterations, 1)) * loss_surface
@@ -145,12 +145,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if mono is not None:
             loss += (0.04 - ((iteration / opt.iterations)) * 0.02) * loss_monoN
             # loss += 0.01 * loss_depth
-        
+
+        lambda_thickness = 0.01  # Hyperparameter
+        thickness = gaussians.get_scaling[:, 2]  # Thickness is in the z-direction
+        loss_thickness = torch.mean(thickness ** 2)
+        loss += lambda_thickness * loss_thickness
 
         loss.backward()
 
         iter_end.record()
-        
+
 
 
 
@@ -179,7 +183,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 if iteration % opt.densification_interval == 0:
                     gaussians.adaptive_prune(min_opac, scene.cameras_extent)
                     gaussians.adaptive_densify(opt.densify_grad_threshold, scene.cameras_extent)
-                
+
                 if (iteration - 1) % opt.opacity_reset_interval == 0 and opt.opacity_lr > 0:
                     gaussians.reset_opacity(0.12, iteration)
 
@@ -190,9 +194,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 depth_wrt = depth2rgb(depth, mask_vis)
                 img_wrt = torch.cat([gt_image, image, normal_wrt * opac, depth_wrt * opac], 2)
                 save_image(img_wrt.cpu(), f'test/test.png')
-                
 
-            
+
+
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad()
@@ -205,7 +209,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
 
-def prepare_output_and_logger(args):    
+def prepare_output_and_logger(args):
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
             unique_str=os.getenv('OAR_JOB_ID')
@@ -213,8 +217,8 @@ def prepare_output_and_logger(args):
             unique_str = str(uuid.uuid4())
 
         args.model_path = os.path.join("./output", f"{args.source_path.split('/')[-1]}_{unique_str[0:10]}")
-        
-        
+
+
     # Set up output folder
     print("Output folder: {}".format(args.model_path))
     os.makedirs(args.model_path, exist_ok = True)
@@ -238,7 +242,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
     # Report test and samples of training set
     if iteration in testing_iterations:
         torch.cuda.empty_cache()
-        validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()}, 
+        validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()},
                               {'name': 'train', 'cameras' : scene.getTrainCameras()[::8]})
         for config in validation_configs:
             if config['cameras'] and len(config['cameras']) > 0:
@@ -255,7 +259,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                     psnr_test += psnr(image, gt_image).mean().double()
 
                 psnr_test /= len(config['cameras'])
-                l1_test /= len(config['cameras'])          
+                l1_test /= len(config['cameras'])
                 print("\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(iteration, config['name'], l1_test, psnr_test))
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
@@ -284,7 +288,7 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     print("Optimizing " + args.model_path)
-    
+
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
 
