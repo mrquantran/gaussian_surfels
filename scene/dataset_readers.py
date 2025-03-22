@@ -3,7 +3,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
@@ -81,13 +81,13 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
         sys.stdout.write('\r')
         # the exact output you're looking for:
         sys.stdout.write("Reading camera {}/{}".format(idx+1, len(cam_extrinsics)))
-        sys.stdout.flush()        
-        
+        sys.stdout.flush()
+
         extr = cam_extrinsics[key]
         intr = cam_intrinsics[extr.camera_id]
         height = intr.height
-        width = intr.width        
-        
+        width = intr.width
+
         image_path = os.path.join(images_folder, os.path.basename(extr.name))
         image_name = os.path.basename(image_path).split(".")[0]
         # print(image_path)
@@ -129,6 +129,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
 
         try:
             monoN = read_monoData(f'{images_folder}/../normal/{image_name}_normal.npy')
+            print("loading monoN", monoN.shape)
             try:
                 monoD = read_monoData(f'{images_folder}/../depth/{image_name}_depth.npy')
             except FileNotFoundError:
@@ -161,7 +162,7 @@ def storePly(path, xyz, rgb, normal=None):
     dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
             ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4'),
             ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
-    
+
     normals = np.zeros_like(xyz) if normal is None else normal
 
     elements = np.empty(xyz.shape[0], dtype=dtype)
@@ -265,7 +266,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
                 image = Image.fromarray(np.array(arr*255.0, dtype=np.byte), "RGB")
 
                 fovy = focal2fov(fov2focal(fovx, image.size[0]), image.size[1])
-                FovY = fovy 
+                FovY = fovy
                 FovX = fovx
                 prcppoint = np.array([0.5, 0.5])
                 mask = mask.transpose([2, 0, 1]).astype(np.float32)
@@ -295,7 +296,7 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
     train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background, extension)
     print("Reading Test Transforms")
     test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", white_background, extension)
-    
+
     if not eval:
         train_cam_infos.extend(test_cam_infos)
         test_cam_infos = []
@@ -309,7 +310,7 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
     else:
         num_pts = 50_0000
         print(f"Generating random point cloud ({num_pts})...")
-        
+
         # We create random points inside the bounds of the synthetic Blender scenes
         rand_scale = 2.6
         xyz = np.random.random((num_pts, 3)) * rand_scale - rand_scale / 2
@@ -408,7 +409,7 @@ def readIDRCameras(path):
 
         # print(R, T)
         # exit()
-        
+
         image_path = image_paths[i]
         image_name = image_path.split('.')[0].split('/')[-1]
         uid = int(image_name.split('/')[-1])
@@ -424,10 +425,10 @@ def readIDRCameras(path):
             mono = np.concatenate([monoN, monoD], 0)
         except FileNotFoundError:
             mono = None
-        
+
         FovY = focal2fov(K[1, 1], image.shape[0])
         FovX = focal2fov(K[0, 0], image.shape[1])
-        
+
         if image.shape[-1] == 4:
             alpha = image[..., 3:] / 255
             object_masks[i] *= alpha.transpose([2, 0, 1])
@@ -457,10 +458,10 @@ def readIDRSceneInfo(path, eval, testskip=8):
     else:
         train_cam_infos = cam_infos
         test_cam_infos = []
-    
+
 
     nerf_normalization = getNerfppNorm(train_cam_infos)
-    
+
     ply_path = os.path.join(path, "points3d.ply")
     if os.path.exists(ply_path):
         pcd = fetchPly(ply_path)
@@ -468,7 +469,7 @@ def readIDRSceneInfo(path, eval, testskip=8):
     else:
         num_pts = 100_0000
         print(f"Generating random point cloud ({num_pts})...")
-        
+
         # We create random points inside the bounds of the synthetic Blender scenes
         rand_scale = 1.2
         normal = np.random.random((num_pts, 3)) - 0.5
@@ -494,7 +495,7 @@ def readIDRSceneInfo(path, eval, testskip=8):
                         test_cameras=test_cam_infos,
                         nerf_normalization=nerf_normalization,
                         ply_path=ply_path)
-    
+
     return scene_info
 
 
