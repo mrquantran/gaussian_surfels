@@ -463,6 +463,7 @@ def readIDRSceneInfo(path, eval, testskip=8):
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
     ply_path = os.path.join(path, "points3d.ply")
+    print(ply_path)
     if os.path.exists(ply_path):
         pcd = fetchPly(ply_path)
         print(f"Featching points3d.ply...")
