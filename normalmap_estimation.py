@@ -9,16 +9,13 @@ import sys
 
 from utils.camera_utils import cameraList_from_camInfos
 
-# Load StableNormal model (assumes availability via torch.hub or local implementation)
-predictor = torch.hub.load("Stable-X/StableNormal", "StableNormal", trust_repo=True)
-
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
     "Blender" : readNerfSyntheticInfo,
     "IDR": readIDRSceneInfo
 }
 
-def precompute_stable_normals(output_dir):
+def precompute_stable_normals(predictor, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     args_eval = False
     if os.path.exists(os.path.join(args.source_path, "sparse")):
@@ -59,8 +56,15 @@ if __name__ == "__main__":
     parser.add_argument("--source_path", type=str, required=True, help="Path to the source data")
     parser.add_argument("--resolution", type=int, default=1, help="Resolution of the images")
     parser.add_argument("--data-device", type=str, default="cuda", help="Device to use for computation")
+    parser.add_argument("--model", type=str, default="Stable-X/StableNormal", help="Model to use for computation")
     gaussians = None  # No GaussianModel needed for precomputation
 
     args = parser.parse_args(sys.argv[1:])
-    precompute_stable_normals(os.path.join(args.source_path, "stable_normal"))
+    model = args.model
+    if model == "Stable-X/StableNormal":
+        predictor = torch.hub.load("Stable-X/StableNormal", "StableNormal", trust_repo=True)
+    elif model == "alexsax/omnidata_models":
+        predictor = torch.hub.load('alexsax/omnidata_models', 'surface_normal_dpt_hybrid_384')
+
+    precompute_stable_normals(predictor, os.path.join(args.source_path, "stable_normal"))
     print("StableNormal maps precomputed and saved.")

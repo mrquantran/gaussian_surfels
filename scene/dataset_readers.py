@@ -76,6 +76,7 @@ def getNerfppNorm(cam_info):
     return {"translate": translate, "radius": radius}
 
 def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
+
     cam_infos = []
     for idx, key in enumerate(cam_extrinsics):
         sys.stdout.write('\r')
@@ -88,7 +89,8 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
         height = intr.height
         width = intr.width
 
-        image_path = os.path.join(images_folder, os.path.basename(extr.name))
+
+        image_path = os.path.join(images_folder, "00" + os.path.basename(extr.name))
         image_name = os.path.basename(image_path).split(".")[0]
         # print(image_path)
         image = Image.open(image_path)
@@ -186,7 +188,8 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
         cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file)
         cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
 
-    reading_dir = "images" if images == None else images
+
+    reading_dir = "image" if images is None else images
     cam_infos_unsorted = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, images_folder=os.path.join(path, reading_dir))
     cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name)
 
