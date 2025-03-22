@@ -2,8 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 
+id_ = "000001"
+
 # Load the normal map (assumed shape is [3, H, W])
-normal_map = np.load("./example/000000_normal.npy")
+normal_map = np.load(f"./example/scan114/normal/{id_}_normal.npy")
 
 # If the data has 3 channels first, transpose it to H x W x C for display
 if normal_map.shape[0] == 3:
@@ -14,7 +16,8 @@ normal_map = (normal_map + 1) / 2.0
 normal_map = np.clip(normal_map, 0, 1)
 
 # Load the corresponding image
-image = Image.open("./example/000000.png")
+file_path = f"./example/scan114/images/{id_[-4:]}.png"
+image = Image.open(file_path)
 image = np.array(image)  # Convert to NumPy array for plotting
 
 # Create a side-by-side plot
