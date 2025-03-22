@@ -3,7 +3,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
@@ -18,6 +18,7 @@ from scene.gaussian_model import GaussianModel
 from arguments import ModelParams
 import torch
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
+from scene.appearance_model import AppearanceModel
 
 class Scene:
 
@@ -91,7 +92,7 @@ class Scene:
                                                            "point_cloud.ply"))
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
-        
+
 
         self.gaussians.config.append(camera_lr > 0)
         self.gaussians.config = torch.tensor(self.gaussians.config, dtype=torch.float32, device="cuda")
@@ -108,11 +109,11 @@ class Scene:
 
     def getTestCameras(self, scale=1.0):
         return self.test_cameras[scale]
-    
+
     def getTrainCamerasByIdx(self, idx, scale=1.0):
         cameras = self.train_cameras[scale]
         return [cameras[i] for i in idx]
-    
+
     def get_random_pose(self, camera0, k=4, n=1):
         # get near ref poses,
         # if i0 is None:
@@ -138,7 +139,7 @@ class Scene:
         min_bound = centers.min(0)[0]
         max_bound = centers.max(0)[0]
         return min_bound, max_bound
-    
+
     def visualize_cameras(self):
         points = []
         colors = []
@@ -156,7 +157,7 @@ class Scene:
         ms = pymeshlab.MeshSet()
         ms.add_mesh(pymeshlab.Mesh(vertex_matrix=np.array(points)))
         ms.save_current_mesh('test/cameras.ply')
-        
+
     def pass_pose(self, s0, s1):
         c0 = self.getTrainCameras(s0)
         c1 = self.getTrainCameras(s1)

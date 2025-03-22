@@ -3,7 +3,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
@@ -19,10 +19,10 @@ from utils.general_utils import rotmat2quaternion
 
 class Camera(nn.Module):
     def __init__(self, colmap_id, R, T, FoVx, FoVy, prcppoint,
-                 image=torch.zeros([1, 1, 1]), 
+                 image=torch.zeros([1, 1, 1]),
                  gt_alpha_mask=None, image_name=None, uid=None,
                  trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda",
-                 mask=None, mono=None, img_w=None, img_h=None, scene_scale=1, camera_lr=0):
+                 mask=None, mono=None, img_w=None, img_h=None, scene_scale=1, camera_lr=0, fid=None):
         super(Camera, self).__init__()
 
         self.uid = uid
@@ -34,13 +34,13 @@ class Camera(nn.Module):
         self.FoVy = FoVy
         self.image_name = image_name
         self.scene_scale = scene_scale
-
         try:
             self.data_device = torch.device(data_device)
         except Exception as e:
             print(e)
             print(f"[Warning] Custom device {data_device} failed, fallback to default cuda device" )
             self.data_device = torch.device("cuda")
+        self.fid = torch.Tensor(np.array([fid])).to(self.data_device)
 
         self.original_image = image.clamp(0.0, 1.0)#.to(self.data_device)
         self.image_width = img_w if img_w is not None else self.original_image.shape[2]
@@ -89,7 +89,7 @@ class Camera(nn.Module):
         # self.feat = None
 
         self.to_cpu()
-        
+
 
 
     def update(self):
@@ -101,7 +101,7 @@ class Camera(nn.Module):
         # if old_center is not None:
         #     print(torch.mean(old_center - self.camera_center))
         # print(self.world_view_transform.device, self.full_proj_transform.device, self.camera_center.device)
-    
+
     def to_device(self, device=None):
         device = self.data_device if device is None else device
         attr_dict = vars(self)
@@ -111,7 +111,7 @@ class Camera(nn.Module):
         self.to(device) # move parameters to device
         self.device = self.data_device
         return self
-    
+
     def to_cpu(self):
         attr_dict = vars(self)
         tensor_keys = [k for k, v in attr_dict.items() if type(v) == torch.Tensor]
@@ -124,11 +124,11 @@ class Camera(nn.Module):
     #     if extractor is None:
     #         return self.original_image
     #     return extractor.extract_feature(self.original_image[None])[0]
-            
+
     def get_feat(self, func=None):
         if func is None:
             return self.original_image[None]
-        
+
         # if self.feat is None:
         #     self.feat = func(self.original_image[None])
         #     self.feat = [i.detach() for i in self.feat]
@@ -139,9 +139,9 @@ class Camera(nn.Module):
             feat = [i.detach() for i in feat]
             self.feat = feat
             # print('generating feats')
-            
+
         return self.feat
-    
+
     def get_intrinsic(self):
         fx = fov2focal(self.FoVx, self.image_width)
         fy = fov2focal(self.FoVy, self.image_height)
@@ -166,7 +166,7 @@ class Camera(nn.Module):
         # exit()
         mask = self.get_gtMask(with_mask) if mask_overwrite is None else mask_overwrite
         return self.original_image * mask + bg[:, None, None] * (1 - mask)
-    
+
     def random_patch(self, h_size=float('inf'), w_size=float('inf')):
         h = self.image_height
         w = self.image_width
@@ -177,7 +177,7 @@ class Camera(nn.Module):
         h1 = h0 + h_size
         w1 = w0 + w_size
         return torch.tensor([h0, w0, h1, w1]).to(torch.float32).to(self.device)
-    
+
     def add_noise(self, s):
         T = self.T + (random.random() - 0.5) * s
         self.T = nn.Parameter(T.contiguous().requires_grad_(True))
@@ -190,13 +190,13 @@ class Camera(nn.Module):
 
 
 
-                
+
 
 
 class MiniCam:
     def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform):
         self.image_width = width
-        self.image_height = height    
+        self.image_height = height
         self.FoVy = fovy
         self.FoVx = fovx
         self.znear = znear

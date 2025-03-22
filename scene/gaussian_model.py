@@ -3,7 +3,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
@@ -14,6 +14,9 @@ import numpy as np
 from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation, normal2rotation
 from torch import nn
 import os
+import trimesh
+from pytorch3d.ops import knn_points
+
 from torch.utils.cpp_extension import load
 from utils.system_utils import mkdir_p
 from plyfile import PlyData, PlyElement
@@ -33,7 +36,7 @@ class GaussianModel:
             actual_covariance = L @ L.transpose(1, 2)
             symm = strip_symmetric(actual_covariance)
             return symm
-        
+
         self.scaling_activation = torch.exp
         self.scaling_inverse_activation = torch.log
 
@@ -47,7 +50,7 @@ class GaussianModel:
 
     def __init__(self, args):
         self.active_sh_degree = 0
-        self.max_sh_degree = args.sh_degree  
+        self.max_sh_degree = args.sh_degree
         self._xyz = torch.empty(0)
         self._features_dc = torch.empty(0)
         self._features_rest = torch.empty(0)
@@ -90,22 +93,22 @@ class GaussianModel:
             self.spatial_lr_scale,
             self.config
         )
-    
+
     def restore(self, model_args, training_args):
-        (self.active_sh_degree, 
-        self._xyz, 
-        self._features_dc, 
+        (self.active_sh_degree,
+        self._xyz,
+        self._features_dc,
         self._features_rest,
-        self._scaling, 
-        self._rotation, 
+        self._scaling,
+        self._rotation,
         self._opacity,
-        self.max_radii2D, 
-        xyz_gradient_accum, 
+        self.max_radii2D,
+        xyz_gradient_accum,
         scale_gradient_accum,
         rot_gradient_accum,
         opac_gradient_accum,
         denom,
-        opt_dict, 
+        opt_dict,
         self.spatial_lr_scale,
         self.config) = model_args
         self.training_setup(training_args)
@@ -122,29 +125,29 @@ class GaussianModel:
         return self.scaling_activation(self._scaling)
         # scaling_2d = torch.cat([self._scaling[..., :2], torch.full_like(self._scaling[..., 2:], -1e10)], -1)
         # return self.scaling_activation(scaling_2d)
-    
+
     @property
     def get_rotation(self):
         return self.rotation_activation(self._rotation)
-    
+
     @property
     def get_xyz(self):
         return self._xyz
-    
+
     @property
     def get_features(self):
         features_dc = self._features_dc
         features_rest = self._features_rest
         return torch.cat((features_dc, features_rest), dim=1)
-    
+
     @property
     def get_opacity(self):
         return self.opacity_activation(self._opacity)
-    
-    
+
+
     def get_covariance(self, scaling_modifier = 1):
         return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
-    
+
     @property
     def get_normal(self):
         return quaternion2rotmat(self.get_rotation)[..., 2]
@@ -166,7 +169,7 @@ class GaussianModel:
         scales = torch.log(torch.sqrt(dist2 / 4))[...,None].repeat(1, 3)
 
         # scales = torch.log(torch.ones((len(fused_point_cloud), 3)).cuda() * 0.02)
-        
+
         if self.config[0] > 0:
             if np.abs(np.sum(pcd.normals)) < 1:
                 dup = 4
@@ -189,7 +192,7 @@ class GaussianModel:
             rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
             rots[:, 0] = 1
 
-        
+
         features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda()
         features[:, :3, 0 ] = fused_color
         features[:, 3:, 1:] = 0.0
@@ -229,7 +232,7 @@ class GaussianModel:
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
-        
+
 
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
@@ -277,8 +280,8 @@ class GaussianModel:
     #     n = self.get_normal
     #     c = SH2RGB(self._features_dc)[:, 0]
     #     save_pcl('test/pcl.ply', v, n, c)
-        
-        
+
+
 
     def reset_opacity(self, ratio, iteration):
         # if len(self._xyz) < self.opac_reset_record[0] * 1.05 and iteration < self.opac_reset_record[1] + 3000:
@@ -292,7 +295,7 @@ class GaussianModel:
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
-    
+
 
     def load_ply(self, path):
         plydata = PlyData.read(path)
@@ -369,6 +372,96 @@ class GaussianModel:
                 group["params"][0] = nn.Parameter(group["params"][0][mask].requires_grad_(True))
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
+
+    def anchor_mesh(self, verts, faces, t, search_radius=0.0005, topn=2, bs=256, increase_bs=1024):
+        # Anchor gaussians to the mesh
+        # Assign each point to the closest face centroid:
+        #   1. If multiple gaussians are assigned to the same face, average their centroids and create a new gaussian, delete the old gaussians
+        #   2. If a face is not assigned to any gaussians, create new gaussians at the face centroids
+
+        torch.cuda.empty_cache()
+        search_radius = self.gaussian_scale * search_radius
+
+        old_xyz_num = self.get_xyz.shape[0]
+
+        # For each face centroid, find the closest gaussian point
+        mesh = trimesh.Trimesh(vertices=verts.detach().cpu().numpy(), faces=faces.detach().cpu().numpy())
+        face_centroids = mesh.triangles_center  # [F, 3]
+        face_normals = mesh.face_normals  # [F, 3]
+        face_centroids_tensor = torch.tensor(face_centroids, dtype=torch.float, device=verts.device, requires_grad=False)
+        face_normals_tensor = torch.tensor(face_normals, dtype=torch.float, device=verts.device, requires_grad=False)
+        gaussian_points = self.get_xyz  # [G, 3]
+
+        # For each gaussian point, find the closest face centroid
+        gs_face_dist, face_indices, _ = knn_points(gaussian_points.unsqueeze(0), face_centroids_tensor.unsqueeze(0), K=1)
+        gs_face_dist = gs_face_dist.squeeze(0)  # [G, 1]
+        face_indices = face_indices.squeeze(0)  # [G, 1]
+        valid_mask = gs_face_dist < search_radius
+        ## Prune the invalid gaussians
+        self.prune_points(~valid_mask.squeeze(1))
+        invalid_ratio = (~valid_mask).sum().item() / face_indices.shape[0]
+        gs_face_dist = gs_face_dist[valid_mask].unsqueeze(1)
+        face_indices = face_indices[valid_mask].unsqueeze(1)
+        ##########################################
+        # Separate the face index into three sets,
+        # 1. have 1-1 gs-face correspondence,
+        # 2. have n-1 gs-face correspondence,
+        # 3. have 0-1 gs-face correspondence
+        ##########################################
+        # Find the unique face indices
+        unique_indices, counts = torch.unique(face_indices, return_counts=True)
+
+        face_indices_1_1 = unique_indices[counts == 1]
+        face_indices_n_1 = unique_indices[counts > 1]
+        face_indices_all = torch.arange(face_centroids_tensor.shape[0], device=gaussian_points.device)
+        face_indices_0_1 = face_indices_all[~(torch.isin(face_indices_all, face_indices_1_1) + torch.isin(face_indices_all, face_indices_n_1))]
+        assert face_indices_1_1.shape[0] + face_indices_n_1.shape[0] + face_indices_0_1.shape[0] == face_centroids_tensor.shape[0]
+
+        # For 1-1 mapped gs-face, calculate the distance loss
+        gs_indices_1_1_mask = torch.isin(face_indices, face_indices_1_1)  # [G, 1]
+        anchor_loss_1_1 = gs_face_dist[gs_indices_1_1_mask].mean()
+
+        # For n-1 mapped gs-face, delete the original gaussians and create new gaussians at the mean position
+        ## Randomly select
+        random_indices = torch.randperm(face_indices_n_1.shape[0], device=face_indices_n_1.device)[:bs]
+        face_indices_n_1 = face_indices_n_1[random_indices]
+        face_indices_n_1_expand = face_indices_n_1.view(-1, 1, 1)  # [X, 1, 1]
+        face_indices_expand = face_indices.view(1, -1, 1)  # [1, G, 1]
+        match_mask = torch.eq(face_indices_n_1_expand, face_indices_expand)  # [X, G, 1]
+        match_mask_row_cumsums = torch.cumsum(match_mask, dim=1)  # [X, G, 1]
+        match_mask_row_topn = match_mask_row_cumsums <= topn  # [X, G, 1]
+        match_mask_topn = torch.logical_and(match_mask, match_mask_row_topn)  # [X, G, 1] with each row has at most topn True
+        ## Delete the rest gaussian which is not in the topn
+        match_mask_topn_sum = match_mask_topn.sum(0)  # [G, 1]
+        match_mask_sum = match_mask.sum(0)  # [G, 1]
+        to_delete_mask = torch.logical_xor(match_mask_topn_sum, match_mask_sum)  # [G, 1]
+        self.prune_points(to_delete_mask.squeeze(1))
+        # Update the mask
+        match_mask_topn = torch.masked_select(match_mask_topn, ~to_delete_mask.unsqueeze(0)).view(match_mask_topn.shape[0], -1, 1)  # [X, G, 1]
+        new_xyz = self.average_and_prune(match_mask_topn, t, topn)  # [bs, 3]
+        face_xyz = face_centroids_tensor[face_indices_n_1]
+        anchor_loss_n_1 = torch.norm(face_xyz - new_xyz, dim=-1).mean()
+
+        # For 0-1 mapped gs-face, create new gaussians at the face centroids
+        face_indices_0_1_mask = ~(torch.isin(face_indices_all, face_indices_1_1) + torch.isin(face_indices_all, face_indices_n_1))  # [F]
+        face_centroids_tensor_0_1 = face_centroids_tensor[face_indices_0_1_mask]
+        face_normals_tensor_0_1 = face_normals_tensor[face_indices_0_1_mask]
+        avg_edge_length = mesh.edges_unique_length.mean()
+        # Select the face centroids in batchwise
+        random_indices = torch.randperm(face_centroids_tensor_0_1.shape[0], device=face_centroids_tensor_0_1.device)[:increase_bs]
+        face_centroids_tensor_0_1_batch = face_centroids_tensor_0_1[random_indices]
+        face_normals_tensor_0_1_batch = face_normals_tensor_0_1[random_indices]
+        self.densify_from_face(face_centroids_tensor_0_1_batch, face_normals_tensor_0_1_batch, avg_edge_length/2, t)
+
+        anchor_loss = anchor_loss_1_1 + anchor_loss_n_1
+
+        new_xyz_num = self.get_xyz.shape[0]
+
+        print(f"Old number of gaussians: {old_xyz_num}, New number of gaussians: {new_xyz_num}, Target face number {face_centroids_tensor.shape[0]}, Anchor loss: {anchor_loss:04f} 1-1 Hit rate: {face_indices_1_1.shape[0]/face_centroids_tensor.shape[0]:.4f} Invalid ratio: {invalid_ratio:.4f}")
+
+        torch.cuda.empty_cache()
+
+        return anchor_loss
 
     def prune_points(self, mask):
         valid_points_mask = ~mask
@@ -470,9 +563,9 @@ class GaussianModel:
         # selected_pts_mask += (grad_rot > grad_rot_thrsh).squeeze()
         selected_pts_mask = torch.logical_and(selected_pts_mask,
                                               torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent)
-        
+
         selected_pts_mask *= pre_mask
-        
+
         new_xyz = self._xyz[selected_pts_mask]
         new_features_dc = self._features_dc[selected_pts_mask]
         new_features_rest = self._features_rest[selected_pts_mask]
@@ -490,7 +583,7 @@ class GaussianModel:
         n_ori = len(self._xyz)
 
         # prune
-        # prune_mask = 
+        # prune_mask =
         # opac_thrsh = torch.tensor([min_opacity, 1])
         opac_temp = self.get_opacity
         prune_opac =  (opac_temp < min_opacity).squeeze()
@@ -502,7 +595,7 @@ class GaussianModel:
         prune_scale = scale_max > 0.5 * extent
         prune_scale += (scale_min * scale_max) < (1e-8 * extent**2)
         # print(prune_scale.sum())
-        
+
         prune_vis = (self.denom == 0).squeeze()
         prune = prune_opac + prune_vis + prune_scale
         self.prune_points(prune)
@@ -526,7 +619,7 @@ class GaussianModel:
         # print(grad_opac.min(), grad_opac.max(), grad_opac.mean())
         denser = torch.le(grad_opac, 2)[:, 0]
         pre_mask = denser * larger
-        
+
         self.densify_and_clone(grad_pos, max_grad, extent, pre_mask=pre_mask)
         self.densify_and_split(grad_pos, max_grad, extent)
 
@@ -565,7 +658,7 @@ class GaussianModel:
         xyz_len = xyz_max - xyz_min
 
         # print(xyz_min, xyz_max, xyz_len)
-        
+
         # grid_dim_max = 1024
         grid_len = xyz_len.max() / grid_dim_max
         grid_dim = (xyz_len / grid_len + 0.5).to(torch.int32)
@@ -573,14 +666,14 @@ class GaussianModel:
         grid = self.utils_mod.gaussian2occgrid(xyz_min, xyz_max, grid_len, grid_dim,
                                                self.get_xyz, self.get_rotation, self.get_scaling, self.get_opacity,
                                                torch.tensor([cutoff]).to(torch.float32).cuda())
-        
-        
+
+
         # print('here')
         # x, y, z = torch.meshgrid(torch.arange(0, grid_dim[0]), torch.arange(0, grid_dim[1]), torch.arange(0, grid_dim[2]), indexing='ij')
-        
+
         # print('here')
         # exit()
-        
+
         # grid_cord = torch.stack([x, y, z], -1).cuda()
 
         return grid, -xyz_min, 1 / grid_len, grid_dim

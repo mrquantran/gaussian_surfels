@@ -3,7 +3,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
@@ -51,19 +51,19 @@ def loadCam(args, id, cam_info, resolution_scale, scene_scale, camera_lr):
 
     if resized_image_rgb.shape[1] == 4:
         loaded_mask = resized_image_rgb[3:4, ...]
-    
+
     # import torch
     # from torchvision.utils import save_image
     # print(cam_info.image.shape)
     # save_image(torch.from_numpy(cam_info.image).permute([2, 0, 1]) / 255, 'test/test.png')
     # exit()
 
-
-    return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
+    print(cam_info)
+    return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T,
                   FoVx=cam_info.FovX, FoVy=cam_info.FovY, prcppoint=cam_info.prcppoint,
                   image=gt_image, gt_alpha_mask=loaded_mask,
                   image_name=cam_info.image_name, uid=id, data_device=args.data_device,
-                  mask=resized_mask, mono=resized_mono, scene_scale=scene_scale, camera_lr=camera_lr)
+                  mask=resized_mask, mono=resized_mono, scene_scale=scene_scale, camera_lr=camera_lr, fid=cam_info.fid)
 
 def cameraList_from_camInfos(cam_infos, resolution_scale, scene_scale, camera_lr, args):
     camera_list = []
