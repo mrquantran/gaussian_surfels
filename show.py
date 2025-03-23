@@ -2,10 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 
-id_ = "000000"
+id_ = "000015"
 
 # Load the normal map (assumed shape is [3, H, W])
 normal_map = np.load(f"./example/scan114/normal/{id_}_normal.npy")
+print(normal_map.shape)
 # If the data has 3 channels first, transpose it to H x W x C for display
 if normal_map.shape[0] == 3:
     normal_map = np.transpose(normal_map, (1, 2, 0))
@@ -19,7 +20,9 @@ normal_map = np.clip(normal_map, 0, 1)
 depth_map = np.load(f"./example/scan114/depth/{id_}_depth.npy")
 print(depth_map.shape)
 depth_map = depth_map.squeeze()
-
+if depth_map.ndim == 3 and depth_map.shape[0] == 3:
+    depth_map = np.transpose(depth_map, (1, 2, 0))
+#
 # Load the corresponding image
 file_path = f"./example/scan114/image/{id_}.png"
 image = Image.open(file_path)

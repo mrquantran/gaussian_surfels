@@ -39,7 +39,7 @@ def load_marigold_model(device, checkpoint="prs-eth/marigold-v1-0", half_precisi
     ).to(device)
     return pipeline
 
-def precompute_depth_maps(pipeline, output_dir, device, args):
+def precompute_normals_maps(pipeline, output_dir, device, args):
     os.makedirs(output_dir, exist_ok=True)
     args_eval = False
 
@@ -78,30 +78,31 @@ def precompute_depth_maps(pipeline, output_dir, device, args):
             original_width, original_height = gt_image_pil.size  # (1600, 1200)
 
             # Run Marigold inference with additional parameters
-            depth_output = pipeline(gt_image_pil)
-            depth_map = depth_output.prediction
-            visualization = pipeline.image_processor.visualize_depth(depth_map)
+            normals_output = pipeline(gt_image_pil)
+            normals_map = normals_output.prediction
+            visualization = pipeline.image_processor.visualize_normals(normals_map)
 
-            # Save depth map visualization
-            depth_visualization = to_tensor(visualization[0]).cpu().numpy()
+            # Save normals map visualization
+            normals_visualization = to_tensor(visualization[0]).cpu().numpy()
 
-            # Save depth map
-            depth_filename = os.path.join(output_dir, f"{cam.image_name}_depth.npy")
-            np.save(depth_filename, depth_visualization)
+            # Save normals map
+            depth_filename = os.path.join(output_dir, f"{cam.image_name}_normal.npy")
+            np.save(depth_filename, normals_visualization)
 
             if i % 10 == 0:
                 print(f"Processed {i+1}/{len(viewpoint_stack)} images")
                 print(f"Original image size: {original_width}x{original_height}, "
-                      f"Depth map size: {depth_visualization.shape[-2]}x{depth_visualization.shape[-1]}")
+                      f"Normals map size: {normals_visualization.shape[-1]}x{normals_visualization.shape[-2]}")
         except Exception as e:
             print(f"Error processing image {cam.image_name}: {e}")
+            assert False, "Error in Marigold inference"
 
 if __name__ == "__main__":
-    parser = ArgumentParser(description="Depth estimation precomputation script")
+    parser = ArgumentParser(description="Normals estimation precomputation script")
     parser.add_argument("--source_path", type=str, required=True, help="Path to the source data")
     parser.add_argument("--resolution", type=int, default=1, help="Resolution of the images")
     parser.add_argument("--data-device", type=str, default="cuda", help="Device to use for computation")
-    parser.add_argument("--checkpoint", type=str, default="prs-eth/marigold-depth-lcm-v1-0",
+    parser.add_argument("--checkpoint", type=str, default="prs-eth/marigold-normals-lcm-v0-1 ",
                         help="Marigold checkpoint to use")
     parser.add_argument("--processing_res", type=int, default=768,
                         help="Processing resolution for Marigold")
@@ -118,6 +119,6 @@ if __name__ == "__main__":
     # Load Marigold model
     pipeline = load_marigold_model(device, args.checkpoint, args.half_precision)
 
-    output_dir = os.path.join(args.source_path, "depth_maps")
-    precompute_depth_maps(pipeline, output_dir, device, args)
-    print("Depth maps precomputed and saved to", output_dir)
+    output_dir = os.path.join(args.source_path, "normals_maps")
+    precompute_normals_maps(pipeline, output_dir, device, args)
+    print("Normals maps precomputed and saved to", output_dir)
