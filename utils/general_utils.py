@@ -3,7 +3,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
@@ -38,6 +38,15 @@ def PILtoTorch(pil_image, resolution):
         return resized_image.permute(2, 0, 1)
     else:
         return resized_image.unsqueeze(dim=-1).permute(2, 0, 1)
+
+def ArrayToTorch(array, resolution):
+    # resized_image = np.resize(array, resolution)
+    resized_image_torch = torch.from_numpy(array)
+
+    if len(resized_image_torch.shape) == 3:
+        return resized_image_torch.permute(2, 0, 1)
+    else:
+        return resized_image_torch.unsqueeze(dim=-1).permute(2, 0, 1)
 
 def get_expon_lr_func(
     lr_init, lr_final, lr_delay_steps=0, lr_delay_mult=1.0, max_steps=1000000
@@ -156,7 +165,7 @@ def normal2rotation(n):
     R0 *= torch.sign(R0[:, :1])
     R0 = torch.nn.functional.normalize(R0)
     R1 = torch.cross(n, R0)
-    
+
     # i = 7859
     # print(R1[i])
     R1 *= torch.sign(R1[:, 1:2]) * torch.sign(n[:, 2:])
@@ -255,7 +264,7 @@ def poisson_mesh(path, vtx, normal, color, depth, thrsh):
     ms.load_new_mesh(path + '_pruned.ply')
     ms.apply_coord_laplacian_smoothing(stepsmoothnum=3, boundary=True)
     ms.save_current_mesh(path + '_pruned.ply')
-    
+
     pbar.update(1)
     pbar.close()
 
