@@ -5,14 +5,12 @@ from PIL import Image
 id_ = "000015"
 
 # Load the normal map (assumed shape is [3, H, W])
+# normal_map = np.load(f"./example/scan114/normals_maps/{id_}_normal.npy")
 normal_map = np.load(f"./example/scan114/normal/{id_}_normal.npy")
 print(normal_map.shape)
 # If the data has 3 channels first, transpose it to H x W x C for display
 if normal_map.shape[0] == 3:
     normal_map = np.transpose(normal_map, (1, 2, 0))
-# Convert values from [-1, 1] to [0, 1]
-normal_map = (normal_map + 1) / 2.0
-normal_map = np.clip(normal_map, 0, 1)
 
 # Load the depth map (assumed to be a .npy file)
 # check shape of depth_map
