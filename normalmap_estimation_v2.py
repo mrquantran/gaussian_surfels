@@ -18,17 +18,6 @@ sceneLoadTypeCallbacks = {
 }
 
 def load_marigold_model(device, checkpoint="prs-eth/marigold-v1-0", half_precision=False):
-    """
-    Load the Marigold depth estimation model.
-
-    Args:
-        device: The device to load the model on
-        checkpoint: The checkpoint to load
-        half_precision: Whether to use half precision
-
-    Returns:
-        pipeline: The loaded inference pipeline
-    """
     from diffusers import DiffusionPipeline
 
     torch_dtype = torch.float16 if half_precision else torch.float32

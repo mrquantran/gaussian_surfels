@@ -92,8 +92,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
 
         image_path = os.path.join(images_folder, "00" + os.path.basename(extr.name))
         image_name = os.path.basename(image_path).split(".")[0]
-        # print(image_path)
-        image = Image.open(image_path)
+        image = Image.open(image_path) # Shape: (H, W, 3)
 
         uid = intr.id
         R = np.transpose(qvec2rotmat(extr.qvec))
@@ -134,6 +133,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
             print("loading monoN", monoN.shape)
             try:
                 monoD = read_monoData(f'{images_folder}/../depth/{image_name}_depth.npy')
+                print("loading monoD", monoD.shape)
             except FileNotFoundError:
                 monoD = np.zeros_like(monoN[:1])
             mono = np.concatenate([monoN, monoD], 0)

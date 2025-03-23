@@ -3,7 +3,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  george.drettakis@inria.fr
@@ -156,7 +156,7 @@ def normal2rotation(n):
     R0 *= torch.sign(R0[:, :1])
     R0 = torch.nn.functional.normalize(R0)
     R1 = torch.cross(n, R0)
-    
+
     # i = 7859
     # print(R1[i])
     R1 *= torch.sign(R1[:, 1:2]) * torch.sign(n[:, 2:])
@@ -210,6 +210,10 @@ def knn_pcl(pcl0, pcl1, feat, K):
 
 
 def poisson_mesh(path, vtx, normal, color, depth, thrsh):
+    # Move tensor parameters to CUDA
+    vtx = vtx.to("cuda")
+    normal = normal.to("cuda")
+    color = color.to("cuda")
 
     pbar = tqdm(total=4)
     pbar.update(1)
@@ -220,18 +224,16 @@ def poisson_mesh(path, vtx, normal, color, depth, thrsh):
     pts = pymeshlab.Mesh(vtx.cpu().numpy(), [], normal.cpu().numpy())
     ms.add_mesh(pts)
 
-
     # poisson reconstruction
     ms.generate_surface_reconstruction_screened_poisson(depth=depth, preclean=True, samplespernode=1.5)
     vert = ms.current_mesh().vertex_matrix()
     face = ms.current_mesh().face_matrix()
     ms.save_current_mesh(path + '_plain.ply')
 
-
     pbar.update(1)
     pbar.set_description('Mesh refining')
     # knn to compute distance and color of poisson-meshed points to sampled points
-    nn_dist, nn_idx, _ = knn_points(torch.from_numpy(vert).to(torch.float32).cuda()[None], vtx.cuda()[None], K=4)
+    nn_dist, nn_idx, _ = knn_points(torch.from_numpy(vert).to(torch.float32).cuda()[None], vtx[None], K=4)
     nn_dist = nn_dist[0]
     nn_idx = nn_idx[0]
     nn_color = torch.mean(color[nn_idx], axis=1)
@@ -255,7 +257,6 @@ def poisson_mesh(path, vtx, normal, color, depth, thrsh):
     ms.load_new_mesh(path + '_pruned.ply')
     ms.apply_coord_laplacian_smoothing(stepsmoothnum=3, boundary=True)
     ms.save_current_mesh(path + '_pruned.ply')
-    
     pbar.update(1)
     pbar.close()
 
