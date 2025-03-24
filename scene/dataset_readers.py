@@ -421,8 +421,10 @@ def readIDRCameras(path):
 
         try:
             monoN = read_monoData(f'{path}/normal/{image_name}_normal.npy')
+            print('loading monoN', monoN.shape)
             try:
                 monoD = read_monoData(f'{path}/depth/{image_name}_depth.npy')
+                print('loading monoD', monoD.shape)
             except FileNotFoundError:
                 monoD = np.zeros_like(monoN[:1])
             mono = np.concatenate([monoN, monoD], 0)
